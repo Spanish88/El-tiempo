@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Previsión del Tiempo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    .modo-noche {
+  background-color: #121212 !important;
+  color: #ffffff !important;
+}
+
+.modo-noche .card {
+  background-color: #3d3c3c !important;
+  color: #ffffff !important;
+  border-color: #333 !important;
+}
+.modo-noche-2 {
+  background-color: #444 !important;
+}
+
+.modo-noche input,
+.modo-noche select,
+.modo-noche button,
+.modo-noche .list-group-item {
+  background-color: #2c2c2c !important;
+  color: #ffffff !important;
+  border-color: #444 !important;
+}
+
+
+
+.modo-noche .btn-primary {
+  background-color: #0d6efd !important;
+}
+
+.modo-noche .btn-success {
+  background-color: #198754 !important;
+}
+#mapa {
+  height: 400px;
+  width: 100%;
+  margin-bottom: 20px;
+  border-radius: 8px;
+}
+    .weather-icon {
+      font-size: 2.5rem;
+    }
+    .card-dia {
+      cursor: default;
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    .card-dia:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 15px rgba(0,0,0,0.2);
+    }
+    .card-hoy {
+      background-color: #f0f8ff;
+      border-left: 5px solid #007bff;
+    }
+    .btn-detalle {
+      margin-top: 10px;
+    }
+    .btn-favorito {
+      margin-top: 10px;
+      margin-left: 10px;
+    }
+    .fade-in {
+      animation: fadeIn 0.5s ease-in-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container py-5">
+    <h1 class="text-center mb-4">Previsión del Tiempo</h1>
+
+    <div class="text-center mb-3">
+      <button class="btn btn-primary" onclick="obtenerUbicacion()"> Usar mi ubicación</button>
+  <button class="btn btn-dark" onclick="alternarModoNoche()">🌙 Modo noche</button>
+</div>
+</div>
+
+    <form onsubmit="buscarUbicacion(event)" class="row g-2 mb-4">
+      <div class="col-md-6">
+        <input type="text" id="entradaCiudad" class="form-control" placeholder="Introduce ciudad o coordenadas (lat,long) " />
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-success w-100"> Buscar</button>
+      </div>
+    </form>
+
+    <div class="row mb-3">
+      <div class="col-md-6">
+        <select id="selectorUnidad" class="form-select" onchange="cambiarUnidad()">
+          <option value="celsius">🌡️ °C (Celsius)</option>
+          <option value="fahrenheit">🌡️ °F (Fahrenheit)</option>
+        </select>
+      </div>
+      <div class="col-md-6 text-end">
+        <button class="btn btn-secondary" onclick="volverUbicacionActual()">↩️ Volver a mi ubicación</button>
+      </div>
+    </div>
+
+    <div id="contenedorFavoritos" class="mb-4"></div>
+
+    <div id="mapa" class="shadow-sm"></div>
+
+    <div id="cardHoy" class="mb-4 fade-in"></div>
+
+    <div id="contenedorTiempo" class="row row-cols-1 row-cols-md-4 g-4 mb-5"></div>
+<div class="card row row-cols-1 row-cols-md-4 g-4 mb-5">
+    <canvas id="graficoTemperaturas"  height="100"></canvas>
+    </div>
+  </div>
+
+  <script>
+    function alternarModoNoche() {
+  document.body.classList.toggle("modo-noche");
+   document.canva.classList.toggle("modo-noche-2");
+}
+
+let mapaLeaflet = null;
+let marcador = null;
+
+function mostrarMapa(lat, lon) {
+  if (!mapaLeaflet) {
+    mapaLeaflet = L.map('mapa').setView([lat, lon], 10);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap'
+    }).addTo(mapaLeaflet);
+  } else {
+    mapaLeaflet.setView([lat, lon], 10);
+    if (marcador) {
+      marcador.setLatLng([lat, lon]);
+    } else {
+      marcador = L.marker([lat, lon]).addTo(mapaLeaflet);
+    }
+    return;
+  }
+
+  marcador = L.marker([lat, lon]).addTo(mapaLeaflet)
+    .bindPopup('📍 Ubicación consultada')
+    .openPopup();
+}
+
+    let unidad = 'celsius';
+    let coordenadasActuales = null;
+
+    const iconosClima = {
+      0: "☀️",
+      1: "🌤️",
+      2: "🌥️",
+      3: "☁️",
+      45: "🌫️",
+      48: "🌫️",
+      51: "🌦️",
+      53: "🌦️",
+      55: "🌧️",
+      61: "🌧️",
+      63: "🌧️",
+      65: "🌧️",
+      71: "🌨️",
+      73: "🌨️",
+      75: "❄️",
+      80: "🌦️",
+      81: "🌦️",
+      82: "🌧️",
+      95: "⛈️",
+      96: "⛈️",
+      99: "⛈️"
+    };
+
+    function convertirTemperatura(tempC) {
+      return unidad === 'fahrenheit' ? ((tempC * 9/5) + 32).toFixed(1) : tempC.toFixed(1);
+    }
+
+    function cambiarUnidad() {
+      unidad = document.getElementById("selectorUnidad").value;
+      if (coordenadasActuales) {
+        obtenerTiempo(coordenadasActuales.lat, coordenadasActuales.lon);
+       
+      }
+    }
+
+    function volverUbicacionActual() {
+      obtenerUbicacion();
+    }
+
+    function guardarFavorito(nombre, lat, lon) {
+      const favoritos = JSON.parse(localStorage.getItem("favoritos") || "[]");
+      if (!favoritos.some(f => f.lat == lat && f.lon == lon)) {
+        favoritos.push({ nombre, lat, lon });
+        localStorage.setItem("favoritos", JSON.stringify(favoritos));
+        mostrarFavoritos();
+      }
+    }
+
+    function mostrarFavoritos() {
+      const favoritos = JSON.parse(localStorage.getItem("favoritos") || "[]");
+      let html = `<h5>⭐ Favoritos:</h5><ul class="list-group">`;
+      favoritos.forEach((f, i) => {
+        html += `
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+             ${f.nombre || `(${f.lat}, ${f.lon})`}
+            <div>
+              <button class="btn btn-sm btn-outline-primary me-1" onclick="obtenerTiempo(${f.lat}, ${f.lon})"> Ver</button>
+              <button class="btn btn-sm btn-outline-danger" onclick="eliminarFavorito(${i})">❌ Eliminar</button>
+            </div>
+          </li>`;
+      });
+      html += `</ul>`;
+      document.getElementById("contenedorFavoritos").innerHTML = html;
+    }
+
+    function eliminarFavorito(indice) {
+      const favoritos = JSON.parse(localStorage.getItem("favoritos") || "[]");
+      favoritos.splice(indice, 1);
+      localStorage.setItem("favoritos", JSON.stringify(favoritos));
+      mostrarFavoritos();
+    }
+
+    function obtenerUbicacion() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(pos => {
+          obtenerTiempo(pos.coords.latitude, pos.coords.longitude);
+        }, () => {
+          alert("⚠️ No se pudo obtener tu ubicación.");
+        });
+      } else {
+        alert("⚠️ Tu navegador no soporta geolocalización.");
+      }
+    }
+
+    function buscarUbicacion(evento) {
+      evento.preventDefault();
+      const entrada = document.getElementById("entradaCiudad").value.trim();
+      if (entrada.includes(",")) {
+        const [lat, lon] = entrada.split(",");
+        obtenerTiempo(lat, lon);
+      } else {
+        buscarCoordenadasPorCiudad(entrada);
+      }
+    }
+
+    async function buscarCoordenadasPorCiudad(ciudad) {
+      try {
+        const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(ciudad)}`);
+        const data = await res.json();
+        if (data.results && data.results.length > 0) {
+          const r = data.results[0];
+          guardarFavorito(r.name, r.latitude, r.longitude);
+          obtenerTiempo(r.latitude, r.longitude);
+        } else {
+          alert("❌ Ciudad no encontrada.");
+        }
+      } catch {
+        alert("❌ Error al obtener coordenadas.");
+      }
+    }
+
+    async function obtenerTiempo(lat, lon) {
+      coordenadasActuales = { lat, lon };
+      mostrarMapa(lat, lon);
+      const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min,weathercode&timezone=auto`);
+      const data = await res.json();
+
+      const dias = data.daily.time;
+      const max = data.daily.temperature_2m_max;
+      const min = data.daily.temperature_2m_min;
+      const codigos = data.daily.weathercode;
+
+      // Hoy
+      document.getElementById("cardHoy").innerHTML = `
+        <div class="card card-hoy shadow p-3 mb-3">
+          <div class="row align-items-center">
+            <div class="col-md-2 fs-1 text-center">${iconosClima[codigos[0]] || "❓"}</div>
+            <div class="col-md-10">
+              <h4>${dias[0]}  Hoy</h4>
+              <p>🌡️ Máx: ${convertirTemperatura(max[0])}° - 🧊 Mín: ${convertirTemperatura(min[0])}°</p>
+              <a href="detalles.html?lat=${lat}&lon=${lon}&date=${dias[0]}&unit=${unidad}" class="btn btn-primary btn-sm btn-detalle">🔍 Ver detalles completos</a>
+              <button class="btn btn-outline-warning btn-sm btn-favorito" onclick="guardarFavorito('Ubicación actual', ${lat}, ${lon})">⭐ Guardar favorito</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      // Resto días
+      let html = "";
+      for (let i = 1; i < dias.length; i++) {
+        html += `
+          <div class="col">
+            <div class="card card-dia shadow p-3">
+              <h5>${dias[i]} ${iconosClima[codigos[i]] || "❓"}</h5>
+              <p>🌡️ Máx: ${convertirTemperatura(max[i])}°<br>🧊 Mín: ${convertirTemperatura(min[i])}°</p>
+              <a href="detalles.html?lat=${lat}&lon=${lon}&date=${dias[i]}&unit=${unidad}" class="btn btn-primary btn-sm btn-detalle">🔍 Ver detalles completos</a>
+            </div>
+          </div>
+        `;
+      }
+      document.getElementById("contenedorTiempo").innerHTML = html;
+
+      mostrarFavoritos();
+      mostrarGrafico(dias, max, min);
+    }
+
+    function mostrarGrafico(dias, max, min) {
+      const ctx = document.getElementById('graficoTemperaturas').getContext('2d');
+
+      if (window.grafico) {
+        window.grafico.destroy();
+      }
+
+      window.grafico = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: dias,
+          datasets: [
+            {
+              label: '🌡️ Temperatura Máxima (°)',
+              data: max.map(t => unidad === 'fahrenheit' ? (t * 9/5 + 32) : t),
+              borderColor: 'rgba(255, 99, 132, 1)',
+              backgroundColor: 'rgba(255, 99, 132, 0.2)',
+              fill: false,
+              tension: 0.3,
+            },
+            {
+              label: '🧊 Temperatura Mínima (°)',
+              data: min.map(t => unidad === 'fahrenheit' ? (t * 9/5 + 32) : t),
+              borderColor: 'rgba(54, 162, 235, 1)',
+              backgroundColor: 'rgba(54, 162, 235, 0.2)',
+              fill: false,
+              tension: 0.3,
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          interaction: {
+            mode: 'index',
+            intersect: false,
+          },
+          scales: {
+            y: {
+              beginAtZero: false
+            }
+          }
+        }
+      });
+    }
+
+    window.onload = () => {
+      mostrarFavoritos();
+      obtenerUbicacion();
+    };
+  </script>
+</body>
+</html>
